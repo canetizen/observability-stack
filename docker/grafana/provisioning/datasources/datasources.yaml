@@ -1,0 +1,49 @@
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    uid: mimir
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9009/prometheus
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://127.0.0.1:3100
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"traceparent"\s*:\s*"[0-9a-fA-F]{2}-([0-9a-fA-F]{32})-[0-9a-fA-F]{16}-[0-9a-fA-F]{2}"'
+          datasourceUid: jaeger
+          url: '$${__value.raw}'
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://127.0.0.1:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: 1h
+        spanEndTimeShift: -1h
+        customQuery: true
+        query: '{observability_stack_scope="lgtm"} |= "$${__span.traceId}"'
+      tracesToMetrics:
+        datasourceUid: mimir
+  - name: Jaeger
+    uid: jaeger
+    type: jaeger
+    access: proxy
+    url: http://127.0.0.1:16686
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: 1h
+        spanEndTimeShift: -1h
+        customQuery: true
+        query: '{observability_stack_scope="lgtm"} |= "$${__span.traceId}"'
