@@ -35,6 +35,10 @@ compactor:
 
 limits_config:
   allow_structured_metadata: true
+  # Every top-level JSON field of a file log record becomes structured metadata,
+  # so the defaults (128 entries, 64KB) reject wide application records.
+  max_structured_metadata_entries_count: 1024
+  max_structured_metadata_size: 256KB
   otlp_config:
     resource_attributes:
       attributes_config:

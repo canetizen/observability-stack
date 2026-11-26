@@ -18,7 +18,8 @@ datasources:
     jsonData:
       derivedFields:
         - name: TraceID
-          matcherRegex: '"traceparent"\s*:\s*"[0-9a-fA-F]{2}-([0-9a-fA-F]{32})-[0-9a-fA-F]{16}-[0-9a-fA-F]{2}"'
+          matcherType: label
+          matcherRegex: trace_id
           datasourceUid: jaeger
           url: '$${__value.raw}'
   - name: Tempo
@@ -32,7 +33,7 @@ datasources:
         spanStartTimeShift: 1h
         spanEndTimeShift: -1h
         customQuery: true
-        query: '{observability_stack_scope="lgtm"} |= "$${__span.traceId}"'
+        query: '{observability_stack_scope="lgtm"} | trace_id="$${__span.traceId}"'
       tracesToMetrics:
         datasourceUid: mimir
   - name: Jaeger
@@ -46,4 +47,4 @@ datasources:
         spanStartTimeShift: 1h
         spanEndTimeShift: -1h
         customQuery: true
-        query: '{observability_stack_scope="lgtm"} |= "$${__span.traceId}"'
+        query: '{observability_stack_scope="lgtm"} | trace_id="$${__span.traceId}"'
