@@ -5,6 +5,36 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  filelog:
+    include:
+      - /var/log/observability/*.log
+    start_at: beginning
+    poll_interval: 1s
+    storage: file_storage/offsets
+    operators:
+      - type: json_parser
+        parse_from: body
+        parse_to: attributes
+        # Keeps timeUnixNano an exact int64; float64 decoding would lose nanosecond precision.
+        parse_ints: true
+      - type: regex_parser
+        if: 'attributes.traceparent != nil'
+        parse_from: attributes.traceparent
+        parse_to: attributes
+        regex: '^[0-9a-fA-F]{2}-(?P<trace_id>[0-9a-fA-F]{32})-(?P<span_id>[0-9a-fA-F]{16})-(?P<trace_flags>[0-9a-fA-F]{2})(?:-.*)?$'
+      - type: trace_parser
+        if: 'attributes.trace_id != nil'
+        trace_id:
+          parse_from: attributes.trace_id
+        span_id:
+          parse_from: attributes.span_id
+        trace_flags:
+          parse_from: attributes.trace_flags
+
+extensions:
+  file_storage/offsets:
+    directory: /data/otelcol/storage
+    create_directory: true
 
 processors:
   memory_limiter:
@@ -19,6 +49,14 @@ processors:
       - context: resource
         statements:
           - set(attributes["observability.stack_scope"], "lgtm")
+  transform/file_log_record:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(time_unix_nano, Int(attributes["timeUnixNano"])) where attributes["timeUnixNano"] != nil
+          - set(severity_number, Int(attributes["severityNumber"])) where attributes["severityNumber"] != nil
+          - set(severity_text, attributes["severityText"]) where attributes["severityText"] != nil
 
 exporters:
   otlp/tempo:
@@ -48,3 +86,8 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, transform/stack_scope, batch]
       exporters: [otlphttp/loki]
+    logs/files:
+      receivers: [filelog]
+      processors: [memory_limiter, transform/file_log_record, transform/stack_scope, batch]
+      exporters: [otlphttp/loki]
+  extensions: [file_storage/offsets]

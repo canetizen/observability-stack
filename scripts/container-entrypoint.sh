@@ -23,7 +23,7 @@ stop_services() {
 
 trap stop_services INT TERM EXIT
 
-mkdir -p /data/grafana /data/loki /data/tempo /data/mimir /data/jaeger
+mkdir -p /data/grafana /data/loki /data/tempo /data/mimir /data/jaeger /data/otelcol/storage
 
 start_service /usr/local/bin/mimir -config.file=/etc/observability/mimir.yaml -target=all
 start_service /usr/local/bin/loki -config.file=/etc/observability/loki.yaml
@@ -35,7 +35,7 @@ start_service env \
     GF_PATHS_CONFIG=/etc/observability/grafana.ini \
     GF_PATHS_DATA=/data/grafana \
     GF_PATHS_LOGS=/data/grafana/logs \
-    GF_PATHS_PLUGINS=/data/grafana/plugins \
+    GF_PATHS_PLUGINS=/usr/share/grafana/plugins-baked \
     GF_PATHS_PROVISIONING=/etc/observability/grafana/provisioning \
     /usr/share/grafana/bin/grafana server --homepath=/usr/share/grafana --config=/etc/observability/grafana.ini
 start_service /usr/local/bin/otelcol-contrib --config=/etc/observability/collector.yaml

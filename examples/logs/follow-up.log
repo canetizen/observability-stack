@@ -1,0 +1,1 @@
+{"time":"2026-11-26T17:05:00Z","timeUnixNano":1795712700000000000,"severityText":"ERROR","severityNumber":17,"message":"Late-arriving log file smoke test","trace_id":"11111111111111111111111111111111","span_id":"2222222222222222","traceparent":"00-11111111111111111111111111111111-2222222222222222-01"}

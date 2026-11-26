@@ -1,39 +1,55 @@
 # Single-Container Observability Stack
 
-This project packages Grafana, Loki, Tempo, Mimir, Jaeger, and the OpenTelemetry Collector into one Docker image and runs them as processes in one container. The Collector accepts OTLP/gRPC on port 4317 and OTLP/HTTP on port 4318. It sends traces to both Tempo and Jaeger, metrics to Mimir, and logs to Loki.
+This project packages Grafana 13.2.0, Loki, Tempo, Mimir, Jaeger, the OpenTelemetry Collector, and Grafana Logs, Metrics, and Traces Drilldown apps into one Docker image. All services run in one container. The Collector accepts OTLP/gRPC on port 4317 and OTLP/HTTP on port 4318, sends traces to both Tempo and Jaeger, metrics to Mimir, and OTLP logs to Loki. Drilldown plugin archives are downloaded during the online image build and included in the exported tar, so Grafana does not need internet access after installation.
 
-The stack is intended for local evaluation and air-gapped installation. Services use local filesystem storage under `./data`; the Jaeger all-in-one backend uses in-memory trace storage. The default Grafana password is `admin`, so set a different `GRAFANA_ADMIN_PASSWORD` before exposing Grafana beyond localhost. The published ports bind to localhost by default.
+The stack is intended for air-gapped installation and runs with Docker host networking. Services use local filesystem storage under `./data`; the Jaeger all-in-one backend uses in-memory trace storage. The default Grafana password is `admin`; set a strong `GRAFANA_ADMIN_PASSWORD` before starting the container.
 
 ## Package on an internet-connected machine
 
-Docker must be available. The build downloads the pinned upstream service images and combines their executables into one image.
+Docker must be available. The build downloads the pinned upstream service images and the pinned Grafana plugin versions, then combines them into one image.
 
 ```bash
 ./run.sh package ./observability-stack.tar
 ```
 
-Copy the archive and this project directory to the air-gapped host. No upstream images are pulled when starting the packaged image.
+Copy the archive, `run.sh`, and the directory containing the logs to the air-gapped host. The tar contains Grafana and all three Drilldown apps; startup performs no image or plugin downloads.
 
 ## Load and run on the air-gapped host
 
 ```bash
-./run.sh load-run ./observability-stack.tar
+./run.sh load-run ./observability-stack.tar /path/to/application/logs
 ./run.sh verify
 ```
 
-Open Grafana at `http://localhost:3000` and Jaeger at `http://localhost:16686`. Grafana credentials default to `admin` / `admin`; set the password on launch:
+The log directory must exist and contain the `.log` files directly inside it. The script mounts it read-only at `/var/log/observability`; the Collector tails `*.log` files and treats each line as one JSON record. New content and new files are followed as they appear.
+
+Every record must carry `time`, `timeUnixNano`, `severityText`, and `severityNumber`. `timeUnixNano` (integer or numeric string) becomes the OTLP log timestamp, and `severityNumber`/`severityText` become the OTLP severity, so they should follow the OpenTelemetry severity scale. Records emitted inside a trace also carry `trace_id`, `span_id`, and a W3C `traceparent`; the Collector sets the OTLP trace context from them. Records without these fields are ingested without trace correlation. All JSON fields are kept as log attributes. Existing contents are read on first start, and file offsets are persisted under `./data/otelcol` to avoid replay after restart. The directory is not recursive.
+
+Open Grafana at `http://localhost:3000` and Jaeger at `http://localhost:16686`. The Drilldown apps are listed under **Drilldown** (`/drilldown`) and open at `/a/grafana-lokiexplore-app/explore` (Logs), `/a/grafana-metricsdrilldown-app/drilldown` (Metrics), and `/a/grafana-exploretraces-app/` (Traces). The `/plugins/<id>/page/<slug>` URLs reported as `defaultNavUrl` by Grafana's plugin API are not routable in Grafana 13.2. Grafana credentials default to `admin` / `admin`; set the password on launch:
 
 ```bash
-GRAFANA_ADMIN_PASSWORD='choose-a-password' ./run.sh load-run ./observability-stack.tar
+GRAFANA_ADMIN_PASSWORD='choose-a-password' ./run.sh load-run ./observability-stack.tar /path/to/application/logs
 ```
 
-The `load-run` and `start` commands replace any existing container with the configured name but preserve data in `./data`. Set `OBSERVABILITY_CONTAINER` or `OBSERVABILITY_DATA_DIR` to use different names or storage locations.
+The `start` command uses the already-loaded image and takes the same log directory argument:
 
-OTLP ports bind to localhost by default. To accept SDK traffic from another host, set `OBSERVABILITY_OTLP_BIND_ADDRESS=0.0.0.0` when running `load-run` or `start`, and restrict access with the host firewall; the OTLP endpoints do not enable TLS or authentication.
+```bash
+./run.sh start /path/to/application/logs
+```
+
+Both `load-run` and `start` replace any existing container with the configured name but preserve data in `./data`. Set `OBSERVABILITY_CONTAINER` or `OBSERVABILITY_DATA_DIR` to use different names or storage locations.
+
+Host networking means Docker port publishing is not used. All service ports bind directly on the host network, so ensure they are free and restrict access with the host firewall. OTLP and backend APIs do not enable TLS or authentication by default. Grafana, Loki, Tempo, Mimir, Jaeger, and Collector listener ports may be reachable from other machines depending on host firewall rules.
 
 ## Generate example signals
 
-The Java 17+ example uses the OpenTelemetry SDK directly. It exports a request counter, an active-request up/down counter, a request-duration histogram, spans, and multiline JSON log records containing W3C `traceparent`.
+The Java 17+ example uses the OpenTelemetry SDK directly. It exports a request counter, an active-request up/down counter, a request-duration histogram, spans, and multiline JSON log records containing a top-level W3C `traceparent` field. File ingestion and OTLP ingestion both export to Loki. The file receiver parses each single-line JSON record as described above and leaves the JSON record as the log body.
+
+For a file-ingestion smoke test, pass the included fixture directory:
+
+```bash
+./run.sh start examples/logs
+```
 
 ```bash
 mvn -f examples/java/pom.xml compile exec:java
@@ -57,4 +73,8 @@ For uniform log discovery, the Collector adds its own `observability.stack_scope
 | 9009 | Mimir API |
 | 16686 | Jaeger UI |
 
-The `./data` directory persists Loki, Tempo, Mimir, and Grafana state across container restarts. Jaeger uses its default in-memory storage and loses its traces when the container stops.
+With host networking these ports are bound directly on the host; Docker `-p` mappings and their localhost-only isolation do not apply. Loki, Mimir, Tempo, and Jaeger also have internal gRPC listeners on ports 9097, 9095, 9096, and 16685 respectively.
+
+Tempo's internal OTLP/HTTP receiver uses loopback port 14320 to avoid colliding with other host services; applications should send OTLP to the Collector ports 4317/4318 instead.
+
+The `./data` directory persists Loki, Tempo, Mimir, Grafana state, and Collector file offsets across container restarts. Jaeger uses its default in-memory storage and loses its traces when the container stops. Grafana 13.2 may migrate the existing Grafana database the first time this image starts; keep a backup of `./data` before upgrading from an earlier Grafana version.

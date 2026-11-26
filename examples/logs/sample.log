@@ -1,0 +1,2 @@
+{"time":"2026-11-26T17:00:00.123456789Z","timeUnixNano":1795712400123456789,"severityText":"INFO","severityNumber":9,"message":"File-based log ingestion smoke test","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
+{"time":"2026-11-26T17:00:01.000000001Z","timeUnixNano":1795712401000000001,"severityText":"WARN","severityNumber":13,"message":"Log record without trace context"}
